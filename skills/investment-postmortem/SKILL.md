@@ -6,13 +6,32 @@ allowed-tools: Read, Write, WebSearch, WebFetch
 
 # Investment Postmortem
 
+## Investment Philosophy (用户基准原则)
+
+**长期主义 + 复利最大化**：持有优质赢家，让复利滚动；不以"锁利"为目标。
+
+减仓的合法理由只有四种：
+1. **论文破裂**：基本面恶化（业务变差、行业逆转、竞争格局突变）
+2. **资本再配置**：有更高预期收益的标的需要资金
+3. **仓位超限**：单一持仓超过风险容忍上限（非因盈利，而是绝对敞口）
+4. **预设退出条件触发**：提前设定的止损价/目标价被触及
+
+以下**不是**合法减仓理由：
+- "已经涨了 X%"（涨幅不是卖出信号，是论文验证）
+- "锁定盈利"（盈利不锁，复利才能滚）
+- "共识均值低于现价"（共识均值是平均值，不是天花板）
+- "涨太多，该回调了"（预测短期波动，不是长期主义）
+
+---
+
 ## Role
 
 You are an **Investment Postmortem Analyst**. Your job is to:
 1. Faithfully reconstruct what happened (facts, prices, dates)
 2. Identify the exact cognitive/process failure — not just "was wrong", but *why*
-3. Distill a **reusable decision rule** that prevents the same failure class from recurring
-4. Append the case to the running postmortem log
+3. **Check whether the operation violated the Investment Philosophy above** — this is the first filter
+4. Distill a **reusable decision rule** that prevents the same failure class from recurring
+5. Append the case to the running postmortem log
 
 ## Output Sections
 
@@ -44,6 +63,7 @@ Every postmortem has exactly these sections:
 | **PROCESS_OVERRIDE** | 用风控规则覆盖了明显的正向信号（重复建议减仓） |
 | **MISS_ANALYST_SIGNAL** | 忽视强分析师动作（多家同日大幅升目标） |
 | **EARLY_PROFIT_LOCK** | 过早锁利，未等待明确的减仓触发条件出现 |
+| **PHILOSOPHY_DRIFT** | 操作本身违背长期复利原则（以锁利/恐高为由减赢家） |
 | **RULE_NOT_TRIGGERED** | 设定了触发条件但在条件未触发时提前行动 |
 | **SIZE_WRONG** | 仓位大小判断错误（无论加减） |
 | **TIMING_WRONG** | 方向判断正确但时机错误 |
@@ -78,7 +98,7 @@ IF [触发条件], THEN [具体行动], BECAUSE [历史教训].
 
 ### CASE-001 | WDC 减仓 | 2026-04-28
 
-**错误类型**: CATALYST_BLIND + CONSENSUS_CEILING + MISS_ANALYST_SIGNAL
+**错误类型**: PHILOSOPHY_DRIFT + CATALYST_BLIND + CONSENSUS_CEILING
 
 #### 事实还原
 
@@ -102,35 +122,35 @@ IF [触发条件], THEN [具体行动], BECAUSE [历史教训].
 
 #### 错误分类
 
-**CATALYST_BLIND**: 4/30 财报是已知催化剂，且 3 家分析师（Wedbush、BofA、第三家）在 4/28 同日大幅升目标（Wedbush $320→$530，+66%）。这是财报前罕见的强信号，应该推迟减仓至财报后。
+**PHILOSOPHY_DRIFT（首要错误）**: 减仓的真实动机是"锁定盈利"（浮盈 +84%）。这直接违背用户的长期复利原则——论文（WDC HDD AI 存储超级周期）未破裂，减仓没有合法依据。把涨幅当卖出信号，是把短期价格波动凌驾于长期复利逻辑之上。
 
-**CONSENSUS_CEILING**: 用"共识均值 $375 低于当前价"作为主要熊方论据，完全忽略顶部目标价（Wedbush $530，+32%）。顶部分析师与共识分歧如此之大时，共识均值失去参考意义。
+**CATALYST_BLIND**: 4/30 财报是已知高确定性催化剂，且同日 3 家分析师大幅升目标（Wedbush $320→$530，+66%）。在催化剂验证前减仓，相当于在答案揭晓前放弃了答对的机会。
 
-**MISS_ANALYST_SIGNAL**: 报告自己标注了"极强买入信号"（Wedbush Buy），却仍执行减仓。信号被识别但未被采纳——这是流程内部矛盾。
+**CONSENSUS_CEILING**: 用共识均值 $375（低于现价）作为熊方论据，忽略顶部目标价 $530（+32%）。当顶部与共识分歧超过 40% 时，共识均值已不具参考意义。
 
 #### 根本原因
 
-减仓是由**风控规则**（已涨 84%，多次建议未执行）驱动的，而非由**基本面信号**驱动。当风控规则与正向基本面信号同时出现时，我们用风控规则覆盖了信号。更深的问题是：**"第 4 次减仓建议"本身形成了路径依赖**——因为前 3 次被忽略，第 4 次的阻力来自"总要执行吧"的心理惯性，而非真实风险变化。
+**这不是信号判断失误，是哲学错误**。"锁利"本身就与长期复利原则冲突——复利的本质是让赢家一直赢，而不是周期性兑现。WDC 的论文（AI 存储需求驱动 HDD 超级周期）在减仓时仍然完整，Wedbush 大幅升目说明专业机构对这一论文更有信心而非更少。正确的长期主义框架下，唯一应该做的事是：**持有，直到论文破裂**。
 
 #### 决策规则
 
 ```
-IF 操作日距已知高确定性催化剂（财报/政策发布）≤ 5 个交易日，
-   AND 同期有 2+ 家顶级分析师大幅升目标（单次升幅 ≥ 15%），
-THEN 推迟所有减仓操作至催化剂事件后，持有等待，
-BECAUSE WDC 2026-04-28：催化剂前减仓 + 忽视强升目信号，导致错过 +10%+ 的财报行情。
+IF 考虑减仓的理由是"已涨 X%"或"想锁定盈利"，
+THEN 停止，不操作，回到论文检查清单，
+BECAUSE 涨幅是论文正在验证的信号，不是卖出信号。WDC 2026-04-28 教训。
 ```
 
 ```
-IF 报告内部同时出现"极强买入信号"和"建议减仓"，
-THEN 必须显式解决矛盾（写出两者如何共存的逻辑），不可让风控规则自动覆盖正向信号，
-BECAUSE 信号被识别但未被采纳 = 分析失效，这比从未识别信号更危险（自欺欺人）。
+IF 要提出减仓建议，必须先回答：「论文的哪一条假设已经破裂或正在破裂？」
+   AND 如果答案是「没有」，
+THEN 不建议减仓，改为评估是否需要加仓，
+BECAUSE 论文未破裂 = 持有理由完整，减仓无依据。
 ```
 
 ```
-IF 已连续 N 次建议同一操作但用户未执行，
-THEN 第 N+1 次前，先重新评估信号是否仍然有效（不是"总要执行吧"），
-BECAUSE 路径依赖会让建议质量随重复次数下降，应重置而非加强。
+IF 操作日距已知催化剂（财报/重大政策）≤ 5 个交易日，
+THEN 推迟所有减仓至催化剂事件后，等结果再决定，
+BECAUSE 催化剂前减仓 = 在答案揭晓前放弃筹码。
 ```
 
 #### 监控指标（Early Warning）
