@@ -1,7 +1,7 @@
 ---
 name: us-stock-report
 description: 每日美股持仓分析报告。登录 eToro 和 Trade Republic 读取实时持仓，生成结构化投资分析 HTML 报告。每天至少运行一次，通常在美股收盘后。
-allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash
+allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 ---
 
 # US Stock Daily Report
@@ -98,18 +98,47 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash
 
 ### 1d. 获取 EUR/USD 汇率
 
-从 eToro 页面的 EURUSD 报价获取，或直接从 TR 搜索 "EUR/USD"。
+从以下渠道获取，按优先级：
+1. TR 搜索框 → 搜索 "EUR/USD" 获取实时汇率
+2. eToro 页面的 EURUSD 报价
+3. 如果上述不可用，用 Playwright 导航到 `https://finance.yahoo.com/quote/EURUSD=X/` 读取
 
 ---
 
 ## Step 2: Search Market Information
 
-用 WebSearch 搜索当天美股市场信息（并行搜索以下内容）：
+### 2a. 用 WebSearch 搜索（首选）
 
+并行搜索以下内容：
 1. `"US stock market today {date} sector performance market close"`
 2. `"Magnificent 7 stocks today {date}"`（或挨个快速搜索 NVDA AMD AAPL MSFT GOOG META AMZN 当日表现）
 3. 如果有重要财报（搜索 `"earnings calendar {date}"` 看是否有持仓股发布财报）
 4. 如果有重大宏观事件（搜索 `"US economic data {date}"`）
+
+### 2b. 如果 WebSearch/WebFetch 不可用 → Playwright 浏览器兜底
+
+如果 WebSearch 或 WebFetch 返回错误（API 故障、网络策略限制等），**不得跳过搜索步骤**，立即用 Playwright 浏览器直接导航到以下数据源：
+
+**大盘行情：**
+- `https://finance.yahoo.com/quote/%5EGSPC/` → S&P 500 指数
+- `https://finance.yahoo.com/quote/%5EIXIC/` → Nasdaq 综合指数
+- `https://www.cnbc.com/markets/` → 当日市场总结
+
+**持仓标的行情 + 新闻（并行抓取关键持仓）：**
+- `https://finance.yahoo.com/quote/{TICKER}/` — 实时价格、涨跌幅、相关新闻
+- `https://www.cnbc.com/quotes/{TICKER}` — 市场评论、分析师观点
+
+**专业分析（选做，精力优先分配给当日波动大的持仓）：**
+- `https://seekingalpha.com/symbol/{TICKER}` — 多空分析、财报评论
+- `https://www.reddit.com/r/wallstreetbets/search/?q={TICKER}` — 社区情绪参考
+
+**EUR/USD 汇率：**
+- `https://www.bloomberg.com/quote/EURUSD:CUR` 或
+- `https://finance.yahoo.com/quote/EURUSD=X/`
+
+用 `browser_navigate` + `browser_snapshot`/`browser_evaluate` 提取上述页面的关键数据。
+
+**优先级规则：** Yahoo Finance 数据最全、结构最稳定，优先抓取。
 
 ---
 
