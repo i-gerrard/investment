@@ -1,6 +1,6 @@
 ---
 name: us-stock-report
-description: 每日美股持仓分析报告。登录 eToro 和 Trade Republic 读取实时持仓，生成结构化投资分析 HTML 报告。每天至少运行一次，通常在美股收盘后。
+description: 每日美股持仓分析报告。登录 eToro 和 Trade Republic 读取实时持仓，调用市场分析 Skills 获取市场环境数据，生成结构化投资分析 HTML 报告。每天至少运行一次，通常在美股收盘后。
 allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 ---
 
@@ -11,10 +11,12 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 每日美股收盘后执行。流程：
 1. **读取前日报告**，提取昨日持仓数量作为对比基准
 2. 同时登录 eToro + Trade Republic 读取实时持仓数据
-3. 搜索当日市场信息（板块轮动、重要财报、宏观事件）
-4. 对比今昨持仓数量，生成变化高亮
-5. 生成结构化 HTML 投资分析报告
-6. 保存到 `~/Desktop/claude/{date}/report-{date}.html`
+3. **并行调用必选 Skills**：market-breadth-analyzer · market-top-detector · sector-analyst · earnings-calendar · economic-calendar-fetcher
+4. **按需调用可选 Skills**：market-news-analyst · theme-detector · exposure-coach · institutional-flow-tracker
+5. 对比今昨持仓数量，生成变化高亮
+6. 生成结构化 HTML 投资分析报告（嵌入 skill 输出结果）
+7. 保存到 `~/Desktop/claude/{date}/report-{date}.html`
+8. **质量保障**：data-quality-checker 校验数据 → report-scorer 打分
 
 ---
 
@@ -182,40 +184,58 @@ prev_tr    = { "NVIDIA": 76.26, "AMD": 32.818, "Tesla": 28.18, ... }
 
 ---
 
-## Step 2: Search Market Information
+## Step 2: 市场信息采集
 
-### 2a. 用 WebSearch 搜索（首选）
+Step 1 完成后立即执行，分三层：必选 Skills → 可选 Skills → 直接搜索补充。
 
-并行搜索以下内容：
-1. `"US stock market today {date} sector performance market close"`
-2. `"Magnificent 7 stocks today {date}"`（或挨个快速搜索 NVDA AMD AAPL MSFT GOOG META AMZN 当日表现）
-3. 如果有重要财报（搜索 `"earnings calendar {date}"` 看是否有持仓股发布财报）
-4. 如果有重大宏观事件（搜索 `"US economic data {date}"`）
+### 2a. 必选 Skills（每次运行，并行调用）
 
-### 2b. 如果 WebSearch/WebFetch 不可用 → Playwright 浏览器兜底
+以下 5 个 skill 无需 API key（earnings-calendar 和 economic-calendar-fetcher 需要 FMP key，若无则跳过并在 2c 用 WebSearch 补充）：
 
-如果 WebSearch 或 WebFetch 返回错误（API 故障、网络策略限制等），**不得跳过搜索步骤**，立即用 Playwright 浏览器直接导航到以下数据源：
+| Skill | 调用目的 | 输出用途 |
+|-------|---------|---------|
+| `market-breadth-analyzer` | 市场广度 0–100 评分 | 写入报告标题副栏 + ⚠️ 风险 banner |
+| `market-top-detector` | 市场顶部概率 0–100 | 写入 ⚠️ 风险 banner，≥60 触发减仓警告 |
+| `sector-analyst` | 板块轮动分析 | 填充各板块 stock-card 的板块背景描述 |
+| `earnings-calendar` | 持仓股未来 7 天财报日 | 填充"近期重要事件"表，stock-card 加"⚡ 今晚财报"标签 |
+| `economic-calendar-fetcher` | 未来 7 天宏观事件 | 填充"近期重要事件"表 |
+
+**调用方式：** 在 Step 1 完成后立即并行触发全部 5 个 skill，等待所有结果后进入 2b。
+
+### 2b. 可选 Skills（按当日情况决定）
+
+| Skill | 调用条件 | 输出用途 |
+|-------|---------|---------|
+| `market-news-analyst` | 每次运行（推荐）或有重大新闻事件 | 填充 ⚡ 催化剂 banner，补充当日最重要新闻 |
+| `theme-detector` | 每次运行（推荐） | 补充 ⚡ 催化剂 banner 的主题叙事（如"AI 光子学"） |
+| `exposure-coach` | 每次运行（推荐） | 生成净敞口姿态摘要，嵌入"操作建议汇总"顶部 |
+| `institutional-flow-tracker` | 持仓中有单日 ±5% 以上大波动的股票时 | 补充对应 stock-card 的多头/空头分析 |
+| `earnings-trade-analyzer` | 持仓股当日刚发布财报时 | 对财报反应评分，嵌入对应 stock-card |
+| `market-environment-analysis` | WebSearch 不可用时作为全量替代 | 替代 2c 的全部 WebSearch 内容 |
+
+### 2c. WebSearch 直接搜索（补充剩余数据）
+
+skill 调用完成后，用 WebSearch 并行补充以下内容（skill 已覆盖的部分跳过）：
+
+1. `"US stock market {date} S&P 500 Nasdaq close"` — 指数收盘数据
+2. `"NVDA AMD AAPL MSFT GOOG META AMZN stock price {date}"` — 重仓股当日涨跌
+3. 如果 earnings-calendar skill 未执行：`"earnings calendar this week {date}"` — 财报日期
+4. 如果 economic-calendar-fetcher skill 未执行：`"economic calendar this week FOMC CPI"` — 宏观事件
+
+### 2d. 全量兜底：WebSearch 和 Skills 均不可用 → Playwright
+
+仅当 WebSearch 返回错误且所有 skill 均失败时启用：
 
 **大盘行情：**
-- `https://finance.yahoo.com/quote/%5EGSPC/` → S&P 500 指数
-- `https://finance.yahoo.com/quote/%5EIXIC/` → Nasdaq 综合指数
-- `https://www.cnbc.com/markets/` → 当日市场总结
+- `https://finance.yahoo.com/quote/%5EGSPC/` → S&P 500
+- `https://finance.yahoo.com/quote/%5EIXIC/` → Nasdaq
 
-**持仓标的行情 + 新闻（并行抓取关键持仓）：**
-- `https://finance.yahoo.com/quote/{TICKER}/` — 实时价格、涨跌幅、相关新闻
-- `https://www.cnbc.com/quotes/{TICKER}` — 市场评论、分析师观点
+**持仓标的（优先抓当日波动 >3% 的持仓）：**
+- `https://finance.yahoo.com/quote/{TICKER}/`
+- `https://www.cnbc.com/quotes/{TICKER}`
 
-**专业分析（选做，精力优先分配给当日波动大的持仓）：**
-- `https://seekingalpha.com/symbol/{TICKER}` — 多空分析、财报评论
-- `https://www.reddit.com/r/wallstreetbets/search/?q={TICKER}` — 社区情绪参考
-
-**EUR/USD 汇率：**
-- `https://www.bloomberg.com/quote/EURUSD:CUR` 或
+**EUR/USD：**
 - `https://finance.yahoo.com/quote/EURUSD=X/`
-
-用 `browser_navigate` + `browser_snapshot`/`browser_evaluate` 提取上述页面的关键数据。
-
-**优先级规则：** Yahoo Finance 数据最全、结构最稳定，优先抓取。
 
 ---
 
@@ -228,8 +248,9 @@ prev_tr    = { "NVIDIA": 76.26, "AMD": 32.818, "Tesla": 28.18, ... }
 1. **标题与副标题**
    - 报告日期 + 星期
    - EUR/USD 汇率
-   - 当天最重要的催化剂（用 ⚡ 标注）
-   - 最紧急的风险提示（用 ⚠️ 标注）
+   - 当天最重要的催化剂（用 ⚡ 标注）——来源：`market-news-analyst` + `theme-detector` 输出
+   - 最紧急的风险提示（用 ⚠️ 标注）——嵌入 `market-top-detector` 分数：`顶部风险 {score}/100`
+   - 市场广度摘要（一行）——来源：`market-breadth-analyzer` 输出的 0–100 评分 + 分级
 
 2. **数据来源验证 banner** — 确认数据已从 eToro + TR 实时获取
 
@@ -324,11 +345,33 @@ prev_tr    = { "NVIDIA": 76.26, "AMD": 32.818, "Tesla": 28.18, ... }
      - 空头分析（s-bear badge）：风险因素、估值压力
      - 结论：明确的操作建议
 
-8. **操作建议汇总 table**
+8. **市场环境摘要**（新增节，位于账户概览之后、持仓分析之前）
+
+   来源：Step 2a/2b 的 skill 输出，整合为一个紧凑的摘要区块：
+
+   ```
+   广度评分：{score}/100（market-breadth-analyzer）
+   顶部风险：{score}/100 — {风险等级}（market-top-detector）
+   板块轮动：{领涨板块} > {领跌板块}（sector-analyst）
+   仓位姿态：{净敞口上限} · {是否允许新建仓}（exposure-coach）
+   当前主题：{主题1} · {主题2}（theme-detector）
+   ```
+
+   **market-top-detector 分数对报告的强制影响：**
+   - 0–39（安全）：报告正常，操作建议可包含加仓
+   - 40–59（观察）：⚠️ banner 加黄色提示，新建仓需额外说明理由
+   - 60–79（警惕）：⚠️ banner 加橙色警告，暂停新建仓建议，评估现有止损
+   - 80–100（危险）：⚠️ banner 加红色危险，触发组合层级减仓评估流程
+
+9. **操作建议汇总 table**
+   - 顶部插入 `exposure-coach` 的一行姿态结论（粗体）
    - 按优先级排列（① 今日必须 ② 关注 ③ 等待 ④ 持有）
    - 列：优先级、股票、方向、账户、数量、参考价、理由
 
-9. **近期重要事件**（财报日期、经济数据、政策事件）
+10. **近期重要事件**（来源：`earnings-calendar` + `economic-calendar-fetcher` 结构化输出）
+
+    - 若 skill 输出可用：直接插入 skill 返回的 markdown 表格
+    - 若 skill 未执行：用 WebSearch 数据手动构建
 
 10. **footer**：报告生成时间、数据来源
 
@@ -416,6 +459,31 @@ analysis-text: border-left 3px solid #0f3460; background #f8f9ff
 
 ---
 
+## Step 4b: 质量保障（报告保存后执行）
+
+### 4b-1. 数据校验 → `data-quality-checker`
+
+将报告路径传入 data-quality-checker，检查：
+- 价格单位一致性（USD/EUR 混用、汇率换算错误）
+- 日期/星期匹配（标题日期与数据日期一致）
+- 现金合计是否与各账户数字匹配
+- P&L 方向与涨跌幅是否一致
+
+若 checker 返回警告，在报告 footer 追加：
+```html
+<div style="background:#fff8e1;border:1px solid #f39c12;border-radius:6px;padding:8px 14px;margin-top:12px;font-size:12px;">
+  ⚠️ 数据质检警告：{checker 返回的警告内容}
+</div>
+```
+
+### 4b-2. 报告评分 → `report-scorer`
+
+调用 report-scorer 对当日报告打分，结果自动嵌入报告第五节（report-scorer 的标准行为）。
+
+**4b 整体失败处理：** 若两个 skill 均失败，跳过 4b，不影响主报告。
+
+---
+
 ## 注意事项
 
 ### 投资哲学（生成建议时必须遵循）
@@ -442,6 +510,22 @@ analysis-text: border-left 3px solid #0f3460; background #f8f9ff
 - 变化出现在两处：① 报告顶部独立对比表；② 对应 stock-card 的 ticker 旁 inline badge
 - 若无任何变化：顶部显示"✅ 持仓数量与昨日完全一致，无变化"
 - 若无前日文件：顶部显示"⚪ 无前日数据，跳过持仓对比"，不报错
+
+### Skill 调用优先级与降级规则
+
+| 层级 | Skill | 不可用时降级方案 |
+|------|-------|--------------|
+| 必选 | market-breadth-analyzer | 广度评分留空，注明"数据不可用" |
+| 必选 | market-top-detector | 顶部风险评分留空，不触发减仓逻辑 |
+| 必选 | sector-analyst | 板块背景描述留空 |
+| 必选（需 FMP key） | earnings-calendar | 用 WebSearch 搜索财报日期补充 |
+| 必选（需 FMP key） | economic-calendar-fetcher | 用 WebSearch 搜索宏观日历补充 |
+| 可选 | market-news-analyst | 用 WebSearch 新闻搜索替代 |
+| 可选 | theme-detector | 催化剂 banner 仅用新闻概括 |
+| 可选 | exposure-coach | 操作建议不含姿态行 |
+| 可选 | institutional-flow-tracker | 对应 stock-card 不含机构资金行 |
+| 质量 | data-quality-checker | 静默跳过，不影响主报告 |
+| 质量 | report-scorer | 静默跳过，报告无评分节 |
 
 ### 推荐操作原则
 - **现金管理**：始终跟踪 eToro + TR 双账户现金，按合并现金占比判断：
