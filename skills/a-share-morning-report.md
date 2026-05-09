@@ -56,9 +56,28 @@ macro-box: background #fff8e1; border #ffe082
 
 用 Write 工具直接写入，文件名格式：`astock-YYYY-MM-DD.html`
 
-### 第四步：告知用户
+### 第四步：发送邮件（自动，无需询问）
 
-报告已保存，简要列出本次推荐的板块和核心逻辑。
+用 Apple Mail 将报告作为附件自动发送到 **505796889@qq.com**，无需询问。
+
+```applescript
+tell application "Mail"
+    set newMessage to make new outgoing message with properties ¬
+        {subject:"A股交易策略报告 - {日期}", ¬
+         content:"请查收今日A股交易策略报告。"}
+    tell newMessage
+        make new to recipient at end of to recipients ¬
+            with properties {address:"505796889@qq.com"}
+        make new attachment with properties ¬
+            {file name:("{报告文件路径}" as POSIX file)}
+    end tell
+    send newMessage
+end tell
+```
+
+### 第五步：告知用户
+
+报告已保存并发送，简要列出本次推荐的板块和核心逻辑。
 
 ## 注意事项
 
