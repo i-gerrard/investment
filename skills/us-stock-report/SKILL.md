@@ -1,6 +1,6 @@
 ---
 name: us-stock-report
-description: 每日美股持仓分析报告。支持桌面端（Playwright 自动登录 eToro + Trade Republic）和手机端（用户手动输入持仓数据）两种运行模式，调用市场分析 Skills 获取市场环境数据，生成结构化投资分析 HTML 报告。每天至少运行一次，通常在美股收盘后。
+description: 每日美股持仓分析报告。登录 eToro 和 Trade Republic 读取实时持仓，调用市场分析 Skills 获取市场环境数据，生成结构化投资分析 HTML 报告。每天至少运行一次，通常在美股收盘后。
 allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 ---
 
@@ -8,9 +8,7 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 
 ## Overview
 
-每日美股收盘后执行。支持两种运行模式：
-
-**桌面端模式**（有 Playwright）：
+每日美股收盘后执行。流程：
 1. **读取前日报告**，提取昨日持仓数量作为对比基准
 2. 同时登录 eToro + Trade Republic 读取实时持仓数据
 3. **并行调用必选 Skills**：market-breadth-analyzer · market-top-detector · sector-analyst · earnings-calendar · economic-calendar-fetcher
@@ -19,29 +17,6 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 6. 生成结构化 HTML 投资分析报告（嵌入 skill 输出结果）
 7. 保存到 `~/Desktop/claude/{date}/report-{date}.html`
 8. **质量保障**：data-quality-checker 校验数据 → report-scorer 打分
-
-**手机端模式**（无 Playwright）：
-1. **读取前日报告**（若可访问），提取昨日持仓数量作为对比基准
-2. 显示结构化输入模板，**等待用户手动粘贴** eToro + TR 持仓数据
-3. **并行调用必选 Skills**（与桌面端相同）
-4. **按需调用可选 Skills**（与桌面端相同）
-5. 对比今昨持仓数量，生成变化高亮
-6. 生成结构化 HTML 投资分析报告
-7. **内联输出**报告 HTML（无法写入文件系统时），或保存到 `~/Documents/claude/{date}/report-{date}.html`
-8. **质量保障**：data-quality-checker 校验数据 → report-scorer 打分
-
----
-
-## 运行模式检测
-
-**在执行任何步骤之前，先判断运行环境：**
-
-```
-桌面端：mcp__playwright__* 工具可用  → 走 Step 1 (桌面端)
-手机端：mcp__playwright__* 工具不可用 → 走 Step 1 (手机端)
-```
-
-判断方法：尝试调用 `mcp__playwright__browser_close`（无害关闭调用），若报错则确认为手机端模式。手机端模式下跳过所有 `mcp__playwright__*` 工具调用，改用手动输入流程。
 
 ---
 
@@ -120,25 +95,18 @@ prev_tr    = { "NVIDIA": 76.26, "AMD": 32.818, "Tesla": 28.18, ... }
 
 ---
 
-## 前置条件：必须获得完整持仓数据，否则终止
+## 前置条件：必须获得实时数据，否则终止
 
-**桌面端硬性规则：** eToro 和 Trade Republic 必须同时成功登录并获取实时数据，才能进行后续步骤。
+**硬性规则：** eToro 和 Trade Republic 必须同时成功登录并获取实时数据，才能进行后续步骤。
 
 - 如果任一账户登录失败（用户无法完成 2FA、页面无法加载等情况），**立即终止**，不执行搜索、分析、报告生成
-- 不允许使用截图 OCR、历史数据估算等方式替代实时数据
+- 不允许使用截图 OCR、历史数据估算、手动输入等方式替代实时数据
+- 不允许只用一个账户的数据生成报告——两个账户都是必需的
 - 终止时告知用户哪个账户登录失败并停止后续操作
-
-**手机端规则：** 通过用户手动输入获取持仓数据，视为实时数据。
-
-- 两个账户的数据都必须由用户提供，不允许只用一个账户
-- 若用户只提供一个账户的数据，明确提示并等待另一个账户的数据
-- 用户提供的数据视为当日实时数据，直接用于报告生成
 
 ---
 
-## Step 1 (桌面端): Open Browser & Login
-
-*仅当 mcp__playwright__* 工具可用时执行此节。手机端请跳至 [Step 1 (手机端)](#step-1-手机端-手动输入持仓数据)。*
+## Step 1: Open Browser & Login
 
 ### 1a. 打开浏览器
 
@@ -216,55 +184,6 @@ prev_tr    = { "NVIDIA": 76.26, "AMD": 32.818, "Tesla": 28.18, ... }
 
 ---
 
-## Step 1 (手机端): 手动输入持仓数据
-
-*仅当 mcp__playwright__* 工具不可用时执行此节。桌面端请跳至 Step 2。*
-
-向用户展示以下输入模板，等待用户填写并提交：
-
-```
-请从您的 eToro 和 Trade Republic 手机 App 中获取以下数据并粘贴回来：
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📱 eToro 账户数据
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-总净值（USD）：$
-今日 P&L（USD）：$
-现金余额（USD）：$
-
-持仓列表（每行一只，格式：股票代码 | 当前价 | 今日涨跌% | 持仓数量 | 均价 | P&L%）：
-示例：NVDA | $215.20 | +1.75% | 50 | $163.07 | +31.98%
-
-[在此粘贴 eToro 持仓]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📱 Trade Republic 账户数据
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-总净值（EUR）：€
-今日 P&L（EUR）：€
-现金余额（EUR）：€
-
-持仓列表（每行一只，格式：名称 | 持仓量 | 市值(€) | 累计盈亏(€)）：
-示例：NVIDIA | 76.260 | €13,905.31 | +€4,521.18
-
-[在此粘贴 Trade Republic 持仓]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💱 EUR/USD 汇率：
-（如不知道，留空，将通过 WebSearch 获取）
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-**接收用户数据后：**
-- 解析用户粘贴的内容，构建与桌面端相同的持仓数据结构
-- 若用户未提供汇率，用 `WebSearch "EUR/USD exchange rate today"` 获取
-- 若用户数据格式不标准，根据可识别字段尽力解析，遇到模糊数据时询问用户确认
-- 两个账户数据均须齐全，否则提醒用户补充缺失账户的数据后再继续
-
-**数据解析完成后直接进入 Step 2。**
-
----
-
 ## Step 2: 市场信息采集
 
 Step 1 完成后立即执行，分三层：必选 Skills → 可选 Skills → 直接搜索补充。
@@ -303,11 +222,9 @@ skill 调用完成后，用 WebSearch 并行补充以下内容（skill 已覆盖
 3. 如果 earnings-calendar skill 未执行：`"earnings calendar this week {date}"` — 财报日期
 4. 如果 economic-calendar-fetcher skill 未执行：`"economic calendar this week FOMC CPI"` — 宏观事件
 
-### 2d. 全量兜底：WebSearch 和 Skills 均不可用
+### 2d. 全量兜底：WebSearch 和 Skills 均不可用 → Playwright
 
 仅当 WebSearch 返回错误且所有 skill 均失败时启用：
-
-**桌面端**：使用 Playwright 导航以下 URL 抓取数据：
 
 **大盘行情：**
 - `https://finance.yahoo.com/quote/%5EGSPC/` → S&P 500
@@ -319,8 +236,6 @@ skill 调用完成后，用 WebSearch 并行补充以下内容（skill 已覆盖
 
 **EUR/USD：**
 - `https://finance.yahoo.com/quote/EURUSD=X/`
-
-**手机端**：使用 `WebFetch` 工具抓取相同 URL（替代 Playwright），无法访问时向用户说明哪些数据缺失并在报告中标注"数据不可用"。
 
 ---
 
@@ -535,40 +450,12 @@ analysis-text: border-left 3px solid #0f3460; background #f8f9ff
 
 ## Step 4: Save Report
 
-根据运行模式选择保存方式：
-
-### 桌面端（Playwright 可用）
-
 将生成的 HTML 文件保存为：
 ```
 ~/Desktop/claude/{date}/report-{date}.html
 ```
+
 确保 `~/Desktop/claude/{date}/` 目录存在，不存在则创建。
-
-### 手机端（Playwright 不可用）
-
-按以下顺序尝试保存，选择第一个成功的方式：
-
-1. **优先尝试**：保存到 `~/Documents/claude/{date}/report-{date}.html`
-   ```bash
-   mkdir -p ~/Documents/claude/{date} && echo "TEST" > ~/Documents/claude/{date}/.test && rm ~/Documents/claude/{date}/.test
-   ```
-   若上述命令成功，则将 HTML 写入该路径并告知用户文件位置。
-
-2. **若无法写文件**：将完整 HTML 作为代码块内联输出到对话中，提示用户复制并本地保存：
-   ```
-   📋 报告已生成（手机端无文件系统访问权限，请长按复制以下 HTML 并在本地保存为 .html 文件）：
-   
-   ```html
-   [完整 HTML 内容]
-   ```
-   ```
-
-3. **无论哪种方式**：对话中始终追加一条摘要消息，包含：
-   - 报告日期
-   - 两账户总净值 + 现金占比
-   - market-top-detector 风险评分
-   - 操作建议数量及最高优先级建议（各 1 行）
 
 ---
 
