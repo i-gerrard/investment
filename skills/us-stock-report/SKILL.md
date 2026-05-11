@@ -24,20 +24,28 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 
 **执行时机：** 登录任何账户之前。此步骤失败不阻断后续流程，仅跳过变化对比。
 
-### 0a. 定位前日报告
+### 0a. 定位最近一份报告
+
+不局限于昨天，搜索 `~/Desktop/claude/` 下所有已有报告，取最新一份：
 
 ```bash
-# 计算前一个交易日（跳过周末：若今天是周一取周五，其余取昨天）
+# 找到最近一份报告（按日期目录倒序，跳过今天）
 today=$(date +%Y-%m-%d)
-dow=$(date +%u)   # 1=Mon … 7=Sun
-if [ "$dow" = "1" ]; then prev=$(date -v-3d +%Y-%m-%d 2>/dev/null || date -d "3 days ago" +%Y-%m-%d)
-else prev=$(date -v-1d +%Y-%m-%d 2>/dev/null || date -d "yesterday" +%Y-%m-%d); fi
-echo "前日日期: $prev"
-ls ~/Desktop/claude/$prev/report-$prev.html 2>/dev/null && echo "FOUND" || echo "NOT_FOUND"
+prev=$(ls -d ~/Desktop/claude/????-??-??/ 2>/dev/null \
+  | sed 's|.*/||; s|/$||' \
+  | sort -r \
+  | grep -v "^$today$" \
+  | head -1)
+if [ -n "$prev" ] && [ -f ~/Desktop/claude/$prev/report-$prev.html ]; then
+  echo "找到前期报告: $prev"
+  echo "FOUND"
+else
+  echo "NOT_FOUND"
+fi
 ```
 
-- 若文件 **NOT_FOUND**：跳过 Step 0，报告中持仓变化列全部显示"—（无前日数据）"
-- 若文件 **FOUND**：执行 0b
+- 若文件 **NOT_FOUND**：跳过 Step 0，报告中持仓变化列全部显示"—（无前期数据）"
+- 若文件 **FOUND**：执行 0b，并在报告中标注对比基准日期（如"对比基准：2026-05-09"）
 
 ### 0b. 从前日 HTML 提取持仓数量
 
@@ -500,16 +508,16 @@ analysis-text: border-left 3px solid #0f3460; background #f8f9ff
 - 登录完成后立即继续后续自动化步骤
 
 ### 数据对比逻辑
-- **前日报告路径**：`~/Desktop/claude/{prev_trading_day}/report-{prev_trading_day}.html`（周一取周五）
-- 若文件存在：执行 Step 0b-0c，提取 eToro + TR 持仓数量，与今日实时数量对比
+- **基准报告**：在 `~/Desktop/claude/` 下搜索所有日期目录，取不等于今天的最新一份报告（不局限于昨天或上个交易日，跨周末/节假日均可找到）
+- 若文件存在：执行 Step 0b-0c，提取 eToro + TR 持仓数量，与今日实时数量对比；报告标题注明基准日期（如"对比基准：2026-05-09"）
 - **高亮规则**（仅对 `change_type != SAME` 的持仓）：
-  - ⭐ 新建仓（NEW）：今日有、昨日无
-  - 🔼 加仓（ADD）：今日数量 > 昨日数量
-  - 🔽 减仓（REDUCE）：今日数量 < 昨日数量
-  - 🔴 已清仓（CLOSED）：昨日有、今日无
+  - ⭐ 新建仓（NEW）：今日有、前期无
+  - 🔼 加仓（ADD）：今日数量 > 前期数量
+  - 🔽 减仓（REDUCE）：今日数量 < 前期数量
+  - 🔴 已清仓（CLOSED）：前期有、今日无
 - 变化出现在两处：① 报告顶部独立对比表；② 对应 stock-card 的 ticker 旁 inline badge
-- 若无任何变化：顶部显示"✅ 持仓数量与昨日完全一致，无变化"
-- 若无前日文件：顶部显示"⚪ 无前日数据，跳过持仓对比"，不报错
+- 若无任何变化：顶部显示"✅ 持仓数量与前期（{prev_date}）完全一致，无变化"
+- 若无任何前期报告文件：顶部显示"⚪ 无前期数据，跳过持仓对比"，不报错
 
 ### Skill 调用优先级与降级规则
 
