@@ -17,6 +17,7 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Edit, Bash, mcp__playwright__*
 6. 生成结构化 HTML 投资分析报告（嵌入 skill 输出结果）
 7. 保存到 `~/Desktop/claude/{date}/report-{date}.html`
 8. **质量保障**：data-quality-checker 校验数据 → report-scorer 打分
+9. **邮件发送**（自动）：用 Apple Mail 将报告作为附件发送到 **li.lance320@gmail.com**，无需询问
 
 ---
 
@@ -489,6 +490,57 @@ analysis-text: border-left 3px solid #0f3460; background #f8f9ff
 调用 report-scorer 对当日报告打分，结果自动嵌入报告第五节（report-scorer 的标准行为）。
 
 **4b 整体失败处理：** 若两个 skill 均失败，跳过 4b，不影响主报告。
+
+---
+
+## Step 4c: 邮件发送（报告保存后自动执行，无需询问）
+
+用 Apple Mail 通过 AppleScript 将 HTML 报告作为附件发送到 **li.lance320@gmail.com**。
+
+**触发时机：** Step 4 保存报告完成后立即执行。即使 Step 4b 质量保障失败，本步骤也必须执行。
+
+**邮件主题：** `美股持仓分析报告 - {YYYY}年{M}月{D}日 | {当日核心主题副标题}`
+- 副标题示例："中美峰会特别版"、"NVDA 财报前夜"、"CPI 数据日"等，由当日最重要催化剂决定
+- 若无特殊主题，省略副标题部分
+
+**邮件正文模板：**
+```
+您好，
+
+请查收{YYYY}年{M}月{D}日美股持仓分析报告。
+
+今日核心：{当日最重要的催化剂/事件，一句话}
+
+要点摘要：
+• 双账户合并总值 ${total}，现金 ${cash}（{cash_ratio}%{状态}）
+• 广度 {breadth_score}/100（{breadth_zone}），仓位{posture}
+• {持仓中最关键的事件/财报/价格变动，1-3条}
+• {操作建议中最高优先级 1-2 条}
+
+祝投资顺利！
+```
+
+**AppleScript 实现：**
+```applescript
+tell application "Mail"
+    set reportPath to "{绝对路径}"
+    set newMessage to make new outgoing message with properties ¬
+        {subject:"{主题}", content:"{正文}"}
+    tell newMessage
+        make new to recipient at end of to recipients ¬
+            with properties {address:"li.lance320@gmail.com"}
+        make new attachment with properties ¬
+            {file name:(reportPath as POSIX file)}
+        send
+    end tell
+end tell
+```
+
+**执行注意：**
+- 用 HEREDOC + osascript 调用，避免引号转义问题
+- 邮件正文中含中文换行用 `& return &` 拼接
+- 失败时告知用户，但不阻断流程（报告已保存可手动发送）
+- **绝对不要发送到其他邮箱（如 QQ 邮箱）**——QQ 邮箱仅用于 A 股报告
 
 ---
 
